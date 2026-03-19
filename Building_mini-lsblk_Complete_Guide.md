@@ -981,6 +981,598 @@ swap_check=$(is_swap "dm-1")
 
 ---
 
+# Understanding Sector Size and Conversion
+
+## What Are Sectors?
+
+A **sector** is the smallest unit of storage on a disk that can be read or written in a single operation.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         WHAT IS A SECTOR?                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Physical Disk Structure:
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        Disk Surface                                        │
+│  ┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐               │
+│  │Sector│Sector│Sector│Sector│Sector│Sector│Sector│Sector│  ...          │
+│  │  0   │  1   │  2   │  3   │  4   │  5   │  6   │  7   │               │
+│  │      │      │      │      │      │      │      │      │               │
+│  │ 512  │ 512  │ 512  │ 512  │ 512  │ 512  │ 512  │ 512  │  ...          │
+│  │bytes │bytes │bytes │bytes │bytes │bytes │bytes │bytes │               │
+│  └──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘               │
+└────────────────────────────────────────────────────────────────────────────┘
+
+Each sector = 512 bytes (traditional)
+Total sectors = Total disk size ÷ 512 bytes
+```
+
+---
+
+## Why /sys/block Shows Sectors
+
+### The Raw Size Value
+
+```bash
+# When you read from /sys/block, you get sector count
+cat /sys/block/sda/size
+125829120
+
+# This is NOT bytes - it's SECTORS!
+```
+
+**Why sectors and not bytes?**
+- Historical standard from early hard drives
+- Hardware-level addressing uses sectors
+- Consistent across different storage types
+- Sector is the atomic unit of disk I/O
+
+---
+
+## The 512-Byte Standard
+
+### Default Sector Size
+
+```bash
+# Check sector size for a device
+cat /sys/block/sda/queue/hw_sector_size
+512
+
+# Most traditional disks use 512 bytes per sector
+```
+
+**Industry standard:**
+- **512 bytes** = Traditional sector size (since 1950s!)
+- **4096 bytes** = Advanced Format (newer drives, since ~2010)
+
+---
+
+## Converting Sectors to Human-Readable Sizes
+
+### The Conversion Formula
+
+```bash
+# Generic formula:
+size_in_gb = (sectors × bytes_per_sector) ÷ 1024 ÷ 1024 ÷ 1024
+
+# For 512-byte sectors:
+size_in_gb = (sectors × 512) ÷ 1024 ÷ 1024 ÷ 1024
+
+# In bash:
+size_gb=$((size_sectors * 512 / 1024 / 1024 / 1024))
+```
+
+---
+
+### Real Examples from RHEL 9 System
+
+Let's convert actual device sizes:
+
+#### Example 1: Physical Disk (sda)
+
+```bash
+# Read sector count
+cat /sys/block/sda/size
+125829120
+
+# Convert to human-readable
+cat /sys/block/sda/size | awk '{printf "%.2f GB\n", $1 * 512 / 1024 / 1024 / 1024}'
+60.00 GB
+```
+
+**Step-by-step calculation:**
+```
+Sectors:  125,829,120
+    ↓ × 512 (bytes per sector)
+Bytes:    64,424,509,440
+    ↓ ÷ 1024 (bytes to KB)
+KB:       62,914,560
+    ↓ ÷ 1024 (KB to MB)
+MB:       61,440
+    ↓ ÷ 1024 (MB to GB)
+GB:       60.00
+```
+
+---
+
+#### Example 2: Root LVM Volume (dm-0)
+
+```bash
+# Read sector count
+cat /sys/block/dm-0/size
+76742656
+
+# Convert to GB
+cat /sys/block/dm-0/size | awk '{printf "%.2f GB\n", $1 * 512 / 1024 / 1024 / 1024}'
+36.59 GB
+```
+
+**Calculation:**
+```
+Sectors:  76,742,656
+    ↓ × 512
+Bytes:    39,292,239,872
+    ↓ ÷ 1024³
+GB:       36.59
+```
+
+---
+
+#### Example 3: Swap LVM Volume (dm-1)
+
+```bash
+# Read sector count
+cat /sys/block/dm-1/size
+8282104
+
+# Convert to GB
+cat /sys/block/dm-1/size | awk '{printf "%.2f GB\n", $1 * 512 / 1024 / 1024 / 1024}'
+3.95 GB
+```
+
+**Calculation:**
+```
+Sectors:  8,282,104
+    ↓ × 512
+Bytes:    4,240,437,248
+    ↓ ÷ 1024³
+GB:       3.95
+```
+
+---
+
+#### Example 4: Home LVM Volume (dm-2)
+
+```bash
+# Read sector count
+cat /sys/block/dm-2/size
+37487616
+
+# Convert to GB
+cat /sys/block/dm-2/size | awk '{printf "%.2f GB\n", $1 * 512 / 1024 / 1024 / 1024}'
+17.87 GB
+```
+
+**Calculation:**
+```
+Sectors:  37,487,616
+    ↓ × 512
+Bytes:    19,193,659,392
+    ↓ ÷ 1024³
+GB:       17.87
+```
+
+---
+
+## Complete Conversion Table
+
+### All Size Units from Sectors
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                       SIZE CONVERSION REFERENCE                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Unit        │ Bytes                │ Conversion from Sectors              │
+├─────────────┼──────────────────────┼──────────────────────────────────────┤
+│ Sector      │ 512 bytes            │ sectors × 1                          │
+│ Byte        │ 1 byte               │ sectors × 512                        │
+│ Kilobyte    │ 1,024 bytes          │ sectors × 512 ÷ 1024                 │
+│ Megabyte    │ 1,048,576 bytes      │ sectors × 512 ÷ 1024²                │
+│ Gigabyte    │ 1,073,741,824 bytes  │ sectors × 512 ÷ 1024³                │
+│ Terabyte    │ 1,099,511,627,776    │ sectors × 512 ÷ 1024⁴                │
+└─────────────┴──────────────────────┴──────────────────────────────────────┘
+```
+
+---
+
+## Conversion Methods
+
+### Method 1: Bash Integer Math (Fastest)
+
+```bash
+# Read sectors
+size_sectors=$(cat /sys/block/dm-0/size)
+
+# Convert to GB (integer only)
+size_gb=$((size_sectors * 512 / 1024 / 1024 / 1024))
+echo "${size_gb}G"
+# Output: 36G
+
+# Pros: Fast, no external dependencies
+# Cons: No decimal precision
+```
+
+---
+
+### Method 2: Using awk (Best Balance)
+
+```bash
+# Convert with 2 decimal places
+cat /sys/block/dm-0/size | awk '{printf "%.2f GB\n", $1 * 512 / 1024 / 1024 / 1024}'
+# Output: 36.59 GB
+
+# Or store in variable:
+size_gb=$(cat /sys/block/dm-0/size | awk '{printf "%.2f", $1 * 512 / 1024 / 1024 / 1024}')
+echo "${size_gb} GB"
+
+# Pros: Decimal precision, no extra packages
+# Cons: Slightly slower than pure bash
+```
+
+---
+
+### Method 3: Using bc (Most Precise)
+
+```bash
+# Convert with custom precision
+echo "scale=3; $(cat /sys/block/dm-0/size) * 512 / 1024 / 1024 / 1024" | bc
+# Output: 36.593
+
+# Requires bc package:
+sudo dnf install -y bc
+
+# Pros: Arbitrary precision
+# Cons: Extra dependency
+```
+
+---
+
+### Method 4: Using numfmt (Human-Readable)
+
+```bash
+# Convert to human-readable with units
+numfmt --to=iec-i --suffix=B $(($(cat /sys/block/dm-0/size) * 512))
+# Output: 36GiB
+
+# Or decimal units:
+numfmt --to=si --suffix=B $(($(cat /sys/block/dm-0/size) * 512))
+# Output: 39GB
+
+# Pros: Automatic unit selection
+# Cons: Less control over output format
+```
+
+---
+
+## How mini-lsblk Does It
+
+### The Conversion in the Script
+
+```bash
+# In mini-lsblk.sh, this line does the conversion:
+
+if [ -f "$device/size" ]; then
+    size_sectors=$(cat "$device/size" 2>/dev/null || echo 0)
+    #              ↑
+    #          Read /sys/block/dm-0/size → 76742656
+    
+    size_gb=$((size_sectors * 512 / 1024 / 1024 / 1024))
+    #          ↑────────────────────────────────────────↑
+    #          Complete conversion: sectors → GB
+    #          76742656 * 512 / 1024 / 1024 / 1024 = 36
+else
+    size_gb=0
+fi
+
+# Result: size_gb = 36 (integer, no decimals)
+```
+
+---
+
+### Why Integer Division?
+
+```bash
+# Bash only does integer arithmetic
+echo $((10 / 3))
+# Output: 3 (not 3.333...)
+
+# Our conversion:
+echo $((76742656 * 512 / 1024 / 1024 / 1024))
+# Output: 36 (not 36.59)
+
+# The decimal part is dropped!
+```
+
+---
+
+## Enhanced Script with Decimals
+
+### Upgrading the Conversion
+
+If you want decimal precision in your mini-lsblk output:
+
+```bash
+# ORIGINAL (integer only):
+size_gb=$((size_sectors * 512 / 1024 / 1024 / 1024))
+printf "%-15s %4dG    disk\n" "$dev_name" "$size_gb"
+# Output: dm-0              36G    disk
+
+# ENHANCED (with decimals using awk):
+size_gb=$(awk -v s=$size_sectors 'BEGIN {printf "%.2f", s * 512 / 1024 / 1024 / 1024}')
+printf "%-15s %6.2fG    disk\n" "$dev_name" "$size_gb"
+# Output: dm-0            36.59G    disk
+```
+
+---
+
+## Testing Your Conversion
+
+### Verify Against lsblk
+
+```bash
+# Your calculation:
+cat /sys/block/dm-0/size | awk '{printf "%.2f", $1 * 512 / 1024 / 1024 / 1024}'
+36.59
+
+# Real lsblk:
+lsblk -b -d -n -o SIZE /dev/dm-0
+39292239872
+
+# Convert lsblk bytes to GB:
+echo "39292239872 / 1024 / 1024 / 1024" | bc -l
+36.59375000000000000000
+
+# They match! ✅
+```
+
+---
+
+## Complete Conversion Script
+
+### All Devices at Once
+
+```bash
+#!/bin/bash
+# show-all-device-sizes.sh
+
+echo "Device         Sectors          Bytes                GB"
+echo "================================================================="
+
+for device in /sys/block/{sd*,dm-*}; do
+    if [ -f "$device/size" ]; then
+        dev_name=$(basename "$device")
+        sectors=$(cat "$device/size")
+        bytes=$((sectors * 512))
+        gb=$(awk -v s=$sectors 'BEGIN {printf "%.2f", s * 512 / 1024 / 1024 / 1024}')
+        
+        printf "%-12s %14d %18d %12.2f GB\n" \
+            "$dev_name" "$sectors" "$bytes" "$gb"
+    fi
+done
+```
+
+**Output:**
+```
+Device         Sectors          Bytes                GB
+=================================================================
+sda              125829120       64424509440        60.00 GB
+dm-0              76742656       39292239872        36.59 GB
+dm-1               8282104        4240437248         3.95 GB
+dm-2              37487616       19193659392        17.87 GB
+```
+
+---
+
+## Understanding the Math Visually
+
+### The Conversion Chain
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    SECTOR TO GB CONVERSION FLOW                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Starting Point: /sys/block/dm-0/size
+       │
+       ↓
+┌──────────────┐
+│ 76,742,656   │  Sectors (what kernel stores)
+└──────┬───────┘
+       │ × 512 (bytes per sector)
+       ↓
+┌──────────────────┐
+│ 39,292,239,872   │  Bytes
+└──────┬───────────┘
+       │ ÷ 1024 (bytes to kilobytes)
+       ↓
+┌──────────────────┐
+│ 38,371,328       │  Kilobytes (KB)
+└──────┬───────────┘
+       │ ÷ 1024 (KB to megabytes)
+       ↓
+┌──────────────────┐
+│ 37,472           │  Megabytes (MB)
+└──────┬───────────┘
+       │ ÷ 1024 (MB to gigabytes)
+       ↓
+┌──────────────────┐
+│ 36.59            │  Gigabytes (GB) ← Final result!
+└──────────────────┘
+```
+
+---
+
+## Quick Reference Commands
+
+### Add to Your ~/.bashrc
+
+```bash
+# Function to convert /sys/block size to GB
+sys_block_gb() {
+    local device="$1"
+    if [ -f "/sys/block/$device/size" ]; then
+        cat "/sys/block/$device/size" | \
+            awk '{printf "%.2f GB\n", $1 * 512 / 1024 / 1024 / 1024}'
+    else
+        echo "Device not found: /sys/block/$device"
+    fi
+}
+
+# Function to show all units
+sys_block_all_units() {
+    local device="$1"
+    if [ -f "/sys/block/$device/size" ]; then
+        local sectors=$(cat "/sys/block/$device/size")
+        echo "Device: $device"
+        echo "Sectors:   $sectors"
+        echo "Bytes:     $((sectors * 512))"
+        echo "KB:        $((sectors * 512 / 1024))"
+        echo "MB:        $((sectors * 512 / 1024 / 1024))"
+        awk -v s=$sectors 'BEGIN {printf "GB:        %.2f\n", s * 512 / 1024 / 1024 / 1024}'
+    fi
+}
+
+# Usage:
+# sys_block_gb dm-0
+# sys_block_all_units sda
+```
+
+**Apply changes:**
+```bash
+source ~/.bashrc
+
+# Test:
+sys_block_gb dm-0
+# 36.59 GB
+
+sys_block_all_units sda
+# Device: sda
+# Sectors:   125829120
+# Bytes:     64424509440
+# KB:        62914560
+# MB:        61440
+# GB:        60.00
+```
+
+---
+
+## Common Pitfalls
+
+### Mistake 1: Forgetting the 512 Multiplier
+
+```bash
+# WRONG - Treating sectors as bytes:
+size_gb=$((size_sectors / 1024 / 1024 / 1024))
+echo $((76742656 / 1024 / 1024 / 1024))
+# Output: 71 GB ❌ (Incorrect!)
+
+# CORRECT - Multiply by 512 first:
+size_gb=$((size_sectors * 512 / 1024 / 1024 / 1024))
+echo $((76742656 * 512 / 1024 / 1024 / 1024))
+# Output: 36 GB ✅ (Correct!)
+```
+
+---
+
+### Mistake 2: Wrong Sector Size
+
+```bash
+# WRONG - Using 1024 instead of 512:
+size_gb=$((size_sectors * 1024 / 1024 / 1024 / 1024))
+# Double the actual size! ❌
+
+# CORRECT - Always use 512 for traditional disks:
+size_gb=$((size_sectors * 512 / 1024 / 1024 / 1024))
+# ✅
+
+# But verify sector size first:
+cat /sys/block/sda/queue/hw_sector_size
+# 512 (traditional)
+# OR
+# 4096 (advanced format - adjust multiplier accordingly)
+```
+
+---
+
+### Mistake 3: Integer vs Decimal Confusion
+
+```bash
+# Integer (bash native):
+echo $((76742656 * 512 / 1024 / 1024 / 1024))
+# 36 (no decimals)
+
+# Decimal (needs awk or bc):
+echo "76742656 * 512 / 1024 / 1024 / 1024" | bc
+# 36 (bc does integer by default too!)
+
+# Decimal (correct with scale):
+echo "scale=2; 76742656 * 512 / 1024 / 1024 / 1024" | bc
+# 36.59 ✅
+
+# Or use awk:
+awk 'BEGIN {print 76742656 * 512 / 1024 / 1024 / 1024}'
+# 36.5938 ✅
+```
+
+---
+
+## Summary
+
+### Key Takeaways
+
+```
+1. Sectors are the smallest disk I/O unit
+   └─ Default size: 512 bytes
+
+2. /sys/block/*/size stores sector count
+   └─ Not bytes! Must convert.
+
+3. Conversion formula:
+   GB = sectors × 512 ÷ 1024³
+
+4. Bash does integer math only
+   └─ Use awk or bc for decimals
+
+5. Always verify sector size:
+   cat /sys/block/*/queue/hw_sector_size
+```
+
+---
+
+### Conversion Cheat Sheet
+
+```bash
+# Quick conversions for 512-byte sectors:
+
+# To Bytes:
+bytes=$((sectors * 512))
+
+# To KB:
+kb=$((sectors * 512 / 1024))
+
+# To MB:
+mb=$((sectors * 512 / 1024 / 1024))
+
+# To GB (integer):
+gb=$((sectors * 512 / 1024 / 1024 / 1024))
+
+# To GB (decimal with awk):
+gb=$(awk -v s=$sectors 'BEGIN {printf "%.2f", s * 512 / 1024 / 1024 / 1024}')
+```
+
+---
+
 # Customization Options
 
 ## Modify Output Format
